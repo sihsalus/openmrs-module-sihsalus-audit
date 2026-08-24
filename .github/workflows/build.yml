@@ -1,0 +1,105 @@
+name: Build with Maven
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clinical-audit-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Java ${{ matrix.java-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [8, 21]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java-version }}
+          cache: maven
+      - name: Build and test
+        run: mvn --batch-mode --show-version --no-transfer-progress clean verify
+      - name: Verify deployable OMOD
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          artifact="omod/target/sihsalusaudit-${version}.omod"
+          test -s "$artifact"
+          unzip -t "$artifact"
+
+  publish:
+    name: Publish Maven Central
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require an associated merged pull request
+        id: merged-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '[.[] | select(.merged_at != null)] | length')"
+          if [ "$count" -gt 0 ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+            echo 'No associated merged pull request; publication is skipped.'
+          fi
+      - name: Set up JDK and Maven Central credentials
+        if: steps.merged-pr.outputs.exists == 'true'
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+      - name: Check whether the version already exists
+        id: central-version
+        if: steps.merged-pr.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          version="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          url="https://repo1.maven.org/maven2/io/github/proyecto-santaclotilde/sihsalusaudit-omod/${version}/sihsalusaudit-omod-${version}.pom"
+          if curl -fsI "$url" >/dev/null; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+            echo "Version ${version} already exists; publication is skipped."
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish release
+        if: steps.merged-pr.outputs.exists == 'true' && steps.central-version.outputs.exists == 'false'
+        run: mvn --batch-mode --show-version --no-transfer-progress -P release deploy -DskipTests
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
