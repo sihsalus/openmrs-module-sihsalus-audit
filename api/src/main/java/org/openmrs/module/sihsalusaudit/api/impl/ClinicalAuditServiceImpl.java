@@ -65,7 +65,14 @@ public class ClinicalAuditServiceImpl implements ClinicalAuditService {
                 && Objects.equals(existing.getEncounterUuid(), submission.getEncounterUuid())
                 && Objects.equals(existing.getResourceType(), submission.getResourceType())
                 && Objects.equals(existing.getMetadataJson(), submission.getMetadataJson())
-                && Objects.equals(existing.getClientOccurredAt(), submission.getClientOccurredAt());
+                && sameInstant(existing.getClientOccurredAt(), submission.getClientOccurredAt());
+    }
+
+    private boolean sameInstant(Date persisted, Date submitted) {
+        // Hibernate hydrates datetime(3) as Timestamp, whose equals rejects a plain Date.
+        // Both sides of the API contract retain millisecond precision.
+        return persisted == null ? submitted == null
+                : submitted != null && persisted.getTime() == submitted.getTime();
     }
 
     @Override
