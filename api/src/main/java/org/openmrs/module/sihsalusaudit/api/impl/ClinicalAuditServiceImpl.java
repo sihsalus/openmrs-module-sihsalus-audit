@@ -69,7 +69,7 @@ public class ClinicalAuditServiceImpl implements ClinicalAuditService {
     }
 
     private boolean sameInstant(Date persisted, Date submitted) {
-        // Hibernate hydrates datetime(3) as Timestamp, whose equals rejects a plain Date.
+        // Compare the public Date views by instant, independent of their concrete subclasses.
         // Both sides of the API contract retain millisecond precision.
         return persisted == null ? submitted == null
                 : submitted != null && persisted.getTime() == submitted.getTime();

@@ -21,13 +21,16 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.openmrs.User;
 import org.openmrs.api.APIAuthenticationException;
+import org.openmrs.api.ValidationException;
 import org.openmrs.module.sihsalusaudit.api.AuditSecurityContext;
 import org.openmrs.module.sihsalusaudit.api.ClinicalAuditService;
 import org.openmrs.module.sihsalusaudit.api.ClinicalAuditSubmission;
 import org.openmrs.module.sihsalusaudit.model.ClinicalAuditEvent;
 import org.openmrs.module.webservices.rest.SimpleObject;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 public class ClinicalAuditControllerTest {
 
@@ -78,6 +81,24 @@ public class ClinicalAuditControllerTest {
             return;
         }
         throw new AssertionError("Persistence failure must not produce a confirmation response");
+    }
+
+    @Test
+    public void replayConflictWithoutSpringErrorsUsesTheSanitizedBadRequestContract() {
+        ClinicalAuditService service = mock(ClinicalAuditService.class);
+        when(service.recordEvents(anyList())).thenThrow(new ValidationException("stored event conflict"));
+        ClinicalAuditController controller = new ClinicalAuditController(
+                service, new AuditPayloadParser(), new AuditRequestBodyReader(), authorizedSecurityContext(), rateLimiter());
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setContent(("[{\"id\":\"33333333-3333-4333-8333-333333333333\","
+                + "\"eventType\":\"PATIENT_SEARCH\"}]").getBytes(StandardCharsets.UTF_8));
+
+        AuditValidationException error = assertThrows(AuditValidationException.class,
+                () -> controller.ingest(request, new MockHttpServletResponse()));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getClass().getAnnotation(ResponseStatus.class).value());
+        assertFalse(error.getMessage().contains("stored event conflict"));
+        verify(service).recordEvents(anyList());
     }
 
     @Test
