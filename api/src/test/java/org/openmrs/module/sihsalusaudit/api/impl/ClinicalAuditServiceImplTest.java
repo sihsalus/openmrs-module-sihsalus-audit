@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
@@ -102,6 +103,54 @@ public class ClinicalAuditServiceImplTest {
                 () -> service.recordEvents(Collections.singletonList(submission)));
 
         verify(dao).appendIdempotently(any(ClinicalAuditEvent.class));
+    }
+
+    @Test
+    public void recordEventsConfirmsRetryAfterHibernateHydratesClientTimeAsTimestamp() {
+        ClinicalAuditSubmission submission = submission("22222222-2222-4222-8222-222222222222");
+        ClinicalAuditEvent stored = storedEvent(submission);
+        stored.setClientOccurredAt(new Timestamp(submission.getClientOccurredAt().getTime()));
+        when(dao.appendIdempotently(any(ClinicalAuditEvent.class))).thenReturn(stored);
+
+        assertEquals(Collections.singletonList(submission.getClientEventId()),
+                service.recordEvents(Collections.singletonList(submission)));
+    }
+
+    @Test
+    public void recordEventsRejectsRetryWithDifferentClientTime() {
+        ClinicalAuditSubmission submission = submission("22222222-2222-4222-8222-222222222222");
+        ClinicalAuditEvent stored = storedEvent(submission);
+        stored.setClientOccurredAt(new Timestamp(submission.getClientOccurredAt().getTime() + 1));
+        when(dao.appendIdempotently(any(ClinicalAuditEvent.class))).thenReturn(stored);
+
+        assertThrows(ValidationException.class,
+                () -> service.recordEvents(Collections.singletonList(submission)));
+    }
+
+    @Test
+    public void recordEventsRejectsRetryThatAddsOrRemovesClientTime() {
+        ClinicalAuditSubmission dated = submission("22222222-2222-4222-8222-222222222222");
+        ClinicalAuditSubmission undated = new ClinicalAuditSubmission(dated.getClientEventId(),
+                dated.getEventType(), dated.getPatientUuid(), dated.getEncounterUuid(),
+                dated.getResourceType(), dated.getMetadataJson(), null);
+        when(dao.appendIdempotently(any(ClinicalAuditEvent.class))).thenReturn(storedEvent(undated));
+        assertThrows(ValidationException.class,
+                () -> service.recordEvents(Collections.singletonList(dated)));
+        when(dao.appendIdempotently(any(ClinicalAuditEvent.class))).thenReturn(storedEvent(dated));
+        assertThrows(ValidationException.class,
+                () -> service.recordEvents(Collections.singletonList(undated)));
+    }
+
+    @Test
+    public void recordEventsConfirmsRetryWithoutClientTime() {
+        ClinicalAuditSubmission dated = submission("22222222-2222-4222-8222-222222222222");
+        ClinicalAuditSubmission undated = new ClinicalAuditSubmission(dated.getClientEventId(),
+                dated.getEventType(), dated.getPatientUuid(), dated.getEncounterUuid(),
+                dated.getResourceType(), dated.getMetadataJson(), null);
+        when(dao.appendIdempotently(any(ClinicalAuditEvent.class))).thenReturn(storedEvent(undated));
+
+        assertEquals(Collections.singletonList(undated.getClientEventId()),
+                service.recordEvents(Collections.singletonList(undated)));
     }
 
     @Test
