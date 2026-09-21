@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.openmrs.User;
+import org.openmrs.api.ValidationException;
 import org.openmrs.module.sihsalusaudit.ClinicalAuditConstants;
 import org.openmrs.module.sihsalusaudit.api.AuditSecurityContext;
 import org.openmrs.module.sihsalusaudit.api.ClinicalAuditService;
@@ -62,7 +63,15 @@ public class ClinicalAuditController extends BaseRestController {
         }
         byte[] body = bodyReader.read(request);
         List<ClinicalAuditSubmission> submissions = payloadParser.parse(body);
-        List<String> confirmedIds = auditService.recordEvents(submissions);
+        List<String> confirmedIds;
+        try {
+            confirmedIds = auditService.recordEvents(submissions);
+        }
+        catch (ValidationException conflict) {
+            // The service transaction has rolled back. RESTWS' generic validation handler
+            // expects a Spring Errors object, which replay conflicts do not provide.
+            throw new AuditValidationException();
+        }
         return new SimpleObject().add("accepted", confirmedIds).add("count", confirmedIds.size());
     }
 

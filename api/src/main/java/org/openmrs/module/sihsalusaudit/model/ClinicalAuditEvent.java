@@ -1,6 +1,7 @@
 package org.openmrs.module.sihsalusaudit.model;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.Date;
 
 import org.openmrs.User;
@@ -23,7 +24,9 @@ public class ClinicalAuditEvent implements Serializable {
 
     private String metadataJson;
 
-    private Date clientOccurredAt;
+    // Field access keeps this value out of OpenMRS' Date-truncating interceptor.
+    // The existing Date API remains a millisecond-precision compatibility boundary.
+    private Instant clientOccurredAt;
 
     private User actor;
 
@@ -86,11 +89,11 @@ public class ClinicalAuditEvent implements Serializable {
     }
 
     public Date getClientOccurredAt() {
-        return clientOccurredAt;
+        return clientOccurredAt == null ? null : Date.from(clientOccurredAt);
     }
 
     public void setClientOccurredAt(Date clientOccurredAt) {
-        this.clientOccurredAt = clientOccurredAt;
+        this.clientOccurredAt = clientOccurredAt == null ? null : Instant.ofEpochMilli(clientOccurredAt.getTime());
     }
 
     public User getActor() {

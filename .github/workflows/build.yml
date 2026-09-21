@@ -43,10 +43,49 @@ jobs:
           test -s "$artifact"
           unzip -t "$artifact"
 
+  mariadb-timestamps:
+    name: MariaDB timestamps (server prepared ${{ matrix.server-prepared }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        server-prepared: [false, true]
+    services:
+      database:
+        image: mariadb:10.11.7
+        env:
+          MARIADB_ROOT_PASSWORD: ephemeral-audit-root
+          MARIADB_DATABASE: audit_timestamp_test
+          MARIADB_USER: audit_test
+          MARIADB_PASSWORD: ephemeral-audit-test
+        ports:
+          - 127.0.0.1:3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Verify persistence with the deployed JDBC driver and MariaDB version
+        env:
+          AUDIT_TEST_DB_PORT: '3306'
+          AUDIT_TEST_DB_PASSWORD: ephemeral-audit-test
+          JAVA_TOOL_OPTIONS: -Duser.timezone=America/Lima
+        run: >-
+          mvn --batch-mode --show-version --no-transfer-progress -pl api -am test
+          -Dtest=ClinicalAuditTimestampPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false
+          -Daudit.test.mariadb=true -Daudit.test.serverPrepared=${{ matrix.server-prepared }}
+
   publish:
     name: Publish Maven Central
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, mariadb-timestamps]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

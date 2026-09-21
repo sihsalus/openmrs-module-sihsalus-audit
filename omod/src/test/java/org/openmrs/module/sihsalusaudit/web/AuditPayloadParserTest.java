@@ -19,6 +19,18 @@ public class AuditPayloadParserTest {
     private final AuditPayloadParser parser = new AuditPayloadParser();
 
     @Test
+    public void preservesMillisecondsFromTheFrontendOfflineTimestamp() {
+        ClinicalAuditSubmission submission = parse("[{"
+                + "\"id\":\"11111111-1111-4111-8111-111111111111\","
+                + "\"eventType\":\"PATIENT_SEARCH\","
+                + "\"metadata\":{\"appName\":\"esm-patient-search-app\",\"offline\":true},"
+                + "\"timestamp\":\"2026-09-14T22:27:12.345Z\"}]").get(0);
+
+        assertEquals(Instant.parse("2026-09-14T22:27:12.345Z").toEpochMilli(),
+                submission.getClientOccurredAt().getTime());
+    }
+
+    @Test
     public void acceptsFrontendEnvelopeAndKeepsClientTimeAsASeparateClaim() {
         String json = "[{"
                 + "\"id\":\"11111111-1111-4111-8111-111111111111\","

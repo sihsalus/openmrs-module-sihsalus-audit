@@ -13,11 +13,13 @@ import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 
 /**
  * Last-line response sanitizer for the clinical audit endpoint. Its exact URL mapping is defined
@@ -28,6 +30,10 @@ import org.slf4j.LoggerFactory;
 public class RestErrorSanitizingFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(RestErrorSanitizingFilter.class);
+
+    private static final String AUDIT_PATH = "/ws/rest/v1/sihsalus/audit";
+
+    private static final String ALLOWED_METHODS = "GET, HEAD, POST, OPTIONS";
 
     // Review pages are capped at 100 compact, schema-bounded rows. Keeping the entire endpoint
     // response buffered guarantees that a later failure can never expose a partial/raw body.
@@ -49,6 +55,26 @@ public class RestErrorSanitizingFilter implements Filter {
         // This filter is mapped only to the audit endpoint. Apply the clinical-data cache policy
         // before invoking the chain so it also covers authentication, mapping and late failures.
         httpResponse.setHeader("Cache-Control", "no-store");
+
+        if (request instanceof HttpServletRequest && isAuditRoot((HttpServletRequest) request)) {
+            HttpServletRequest httpRequest = (HttpServletRequest) request;
+            String method = httpRequest.getMethod();
+            // RESTWS' generic resource mapping can win when the audit controller's method or
+            // consumes condition does not match. Reject those mismatches before that fallback.
+            // Keep Spring's existing GET/HEAD/OPTIONS handling and all subpaths unchanged.
+            if (!"GET".equals(method) && !"HEAD".equals(method)
+                    && !"POST".equals(method) && !"OPTIONS".equals(method)) {
+                writeSanitizedError(httpResponse, HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+                        null, ALLOWED_METHODS, null);
+                return;
+            }
+            if ("POST".equals(method) && !hasJsonContentType(httpRequest)) {
+                writeSanitizedError(httpResponse, HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE,
+                        null, null, null);
+                return;
+            }
+        }
+
         BufferingResponseWrapper wrapper = new BufferingResponseWrapper(httpResponse);
         try {
             chain.doFilter(request, wrapper);
@@ -78,6 +104,21 @@ public class RestErrorSanitizingFilter implements Filter {
 
     @Override
     public void destroy() {
+    }
+
+    private boolean isAuditRoot(HttpServletRequest request) {
+        String auditUri = request.getContextPath() + AUDIT_PATH;
+        return auditUri.equals(request.getRequestURI()) || (auditUri + "/").equals(request.getRequestURI());
+    }
+
+    private boolean hasJsonContentType(HttpServletRequest request) {
+        try {
+            // Match application/json while accepting valid parameters such as charset=UTF-8.
+            return MediaType.APPLICATION_JSON.includes(MediaType.parseMediaType(request.getContentType()));
+        }
+        catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 
     static Throwable safeFailureForLogging(Throwable failure) {

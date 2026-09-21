@@ -65,7 +65,14 @@ public class ClinicalAuditServiceImpl implements ClinicalAuditService {
                 && Objects.equals(existing.getEncounterUuid(), submission.getEncounterUuid())
                 && Objects.equals(existing.getResourceType(), submission.getResourceType())
                 && Objects.equals(existing.getMetadataJson(), submission.getMetadataJson())
-                && Objects.equals(existing.getClientOccurredAt(), submission.getClientOccurredAt());
+                && sameInstant(existing.getClientOccurredAt(), submission.getClientOccurredAt());
+    }
+
+    private boolean sameInstant(Date persisted, Date submitted) {
+        // Compare the public Date views by instant, independent of their concrete subclasses.
+        // Both sides of the API contract retain millisecond precision.
+        return persisted == null ? submitted == null
+                : submitted != null && persisted.getTime() == submitted.getTime();
     }
 
     @Override

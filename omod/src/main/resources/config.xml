@@ -6,6 +6,7 @@
   <package>org.openmrs.module.sihsalusaudit</package>
   <author>SIHSALUS</author>
   <description>${project.parent.description}</description>
+  <activator>org.openmrs.module.sihsalusaudit.ClinicalAuditActivator</activator>
   <require_version>2.8.0</require_version>
 
   <require_modules>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC
+  "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+  "http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+<hibernate-mapping>
+  <!-- Only the actor identity is needed for the module's real DAO/row lock. -->
+  <class name="org.openmrs.User" table="audit_test_user" lazy="false">
+    <id name="userId" column="user_id" type="integer">
+      <generator class="assigned" />
+    </id>
+    <property name="uuid" column="uuid" type="string" not-null="true" />
+  </class>
+</hibernate-mapping>
