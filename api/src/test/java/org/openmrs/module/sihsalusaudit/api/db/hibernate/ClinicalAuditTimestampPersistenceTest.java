@@ -2,8 +2,13 @@ package org.openmrs.module.sihsalusaudit.api.db.hibernate;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Date;
@@ -37,16 +42,37 @@ public class ClinicalAuditTimestampPersistenceTest {
 
     private static SessionFactory sessionFactory;
 
+    private static final boolean MARIADB = Boolean.getBoolean("audit.test.mariadb");
+
     private static User actor;
 
     private ClinicalAuditServiceImpl service;
 
     @BeforeClass
     public static void createDatabase() {
-        sessionFactory = new Configuration()
-                .setProperty("hibernate.connection.driver_class", "org.h2.Driver")
-                .setProperty("hibernate.connection.url", "jdbc:h2:mem:audit-timestamps;DB_CLOSE_DELAY=-1")
-                .setProperty("hibernate.dialect", "org.hibernate.dialect.H2Dialect")
+        Configuration configuration = new Configuration();
+        if (MARIADB) {
+            // Destructive schema setup is restricted to the disposable local CI database.
+            String port = System.getenv("AUDIT_TEST_DB_PORT");
+            assertTrue("Explicit disposable database port required", port != null && port.matches("[0-9]{4,5}"));
+            assertTrue(Integer.parseInt(port) >= 1024 && Integer.parseInt(port) <= 65535);
+            String password = System.getenv("AUDIT_TEST_DB_PASSWORD");
+            assertTrue("Disposable test credential required", password != null && !password.isEmpty());
+            configuration.setProperty("hibernate.connection.driver_class", "com.mysql.cj.jdbc.Driver")
+                    .setProperty("hibernate.connection.url", "jdbc:mysql://127.0.0.1:" + port
+                            + "/audit_timestamp_test?useSSL=false&connectionTimeZone=UTC"
+                            + "&forceConnectionTimeZoneToSession=true&useServerPrepStmts="
+                            + Boolean.getBoolean("audit.test.serverPrepared"))
+                    .setProperty("hibernate.connection.username", "audit_test")
+                    .setProperty("hibernate.connection.password", password)
+                    .setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL5InnoDBDialect");
+        }
+        else {
+            configuration.setProperty("hibernate.connection.driver_class", "org.h2.Driver")
+                    .setProperty("hibernate.connection.url", "jdbc:h2:mem:audit-timestamps;DB_CLOSE_DELAY=-1")
+                    .setProperty("hibernate.dialect", "org.hibernate.dialect.H2Dialect");
+        }
+        sessionFactory = configuration
                 .setProperty("hibernate.hbm2ddl.auto", "create-drop")
                 .setProperty("hibernate.current_session_context_class", "managed")
                 .setProperty("hibernate.jdbc.time_zone", "UTC")
@@ -113,6 +139,56 @@ public class ClinicalAuditTimestampPersistenceTest {
 
         assertEquals(1L, count(id));
         assertEquals(CLIENT_TIME, read(id).getClientOccurredAt().getTime());
+    }
+
+    @Test
+    public void missingClientTimeRemainsNullAndIdenticalReplaySucceeds() {
+        String id = UUID.randomUUID().toString();
+        ClinicalAuditSubmission submission = new ClinicalAuditSubmission(id, "PATIENT_SEARCH", null, null, null,
+                "{\"offline\":true}", null);
+        record(submission);
+
+        assertNull(read(id).getClientOccurredAt());
+        assertEquals(Collections.singletonList(id), record(submission));
+        assertThrows(ValidationException.class, () -> record(submission(id, CLIENT_TIME)));
+        assertEquals(1L, count(id));
+    }
+
+    @Test
+    public void existingDateTimeRowsRemainReadableWithoutRewritingEvidence() {
+        String id = UUID.randomUUID().toString();
+        inTransaction(() -> sessionFactory.getCurrentSession().doReturningWork(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO sihsalus_clinical_audit_event "
+                            + "(client_event_id,event_type,actor_id,server_timestamp,client_occurred_at) "
+                            + "VALUES (?, 'PATIENT_SEARCH', 42, '2026-09-14 22:28:00', '2026-09-14 22:27:12')")) {
+                statement.setString(1, id);
+                return statement.executeUpdate();
+            }
+        }));
+
+        assertEquals(CLIENT_TIME - 345, read(id).getClientOccurredAt().getTime());
+        assertEquals(1L, count(id));
+    }
+
+    @Test
+    public void driverControlDemonstratesWhyTimestampBindingLosesMillisecondsOnMariaDb() {
+        inTransaction(() -> sessionFactory.getCurrentSession().doReturningWork(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("SELECT CAST(? AS DATETIME(3))")) {
+                statement.setTimestamp(1, new Timestamp(CLIENT_TIME),
+                        java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")));
+                try (ResultSet result = statement.executeQuery()) {
+                    assertTrue(result.next());
+                    assertEquals(MARIADB ? 0 : 345000000, result.getTimestamp(1).getNanos());
+                }
+                statement.setString(1, "2026-09-14 22:27:12.345");
+                try (ResultSet result = statement.executeQuery()) {
+                    assertTrue(result.next());
+                    assertEquals(345000000, result.getTimestamp(1).getNanos());
+                }
+            }
+            return null;
+        }));
     }
 
     private ClinicalAuditSubmission submission(String id, long time) {
