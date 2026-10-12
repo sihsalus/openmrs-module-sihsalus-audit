@@ -55,12 +55,17 @@ public class ClinicalAuditServiceConcurrencyTest {
     private ClinicalAuditServiceImpl service(ClinicalAuditDao dao, User actor) {
         ClinicalAuditServiceImpl service = new ClinicalAuditServiceImpl();
         service.setDao(dao);
-        service.setSecurityContext(privilege -> actor);
+        service.setSecurityContext(new org.openmrs.module.sihsalusaudit.api.AuditSecurityContext() {
+            public User requireAuthenticatedUser() { return actor; }
+            public User requireAuthenticatedUserWithPrivilege(String privilege) { return actor; }
+        });
         service.setClock(() -> new Date(1_787_099_696_000L));
         return service;
     }
 
     private static final class RacingIdempotentDao implements ClinicalAuditDao {
+
+        public void appendServerEvent(ClinicalAuditEvent event) { throw new UnsupportedOperationException(); }
 
         private final ConcurrentMap<String, ClinicalAuditEvent> stored =
                 new ConcurrentHashMap<String, ClinicalAuditEvent>();

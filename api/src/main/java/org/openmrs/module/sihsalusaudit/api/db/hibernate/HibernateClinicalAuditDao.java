@@ -15,6 +15,16 @@ public class HibernateClinicalAuditDao implements ClinicalAuditDao {
     private DbSessionFactory sessionFactory;
 
     @Override
+    public void appendServerEvent(ClinicalAuditEvent event) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()
+                || event.getActor() == null || event.getActor().getUserId() == null
+                || !event.getEventType().startsWith("SERVER_")) {
+            throw new IllegalStateException("Server audit requires an authenticated clinical transaction");
+        }
+        sessionFactory.getCurrentSession().save(event);
+    }
+
+    @Override
     public ClinicalAuditEvent appendIdempotently(ClinicalAuditEvent event) {
         if (event == null || event.getActor() == null || event.getActor().getUserId() == null) {
             throw new IllegalArgumentException("Audit event actor is required");
