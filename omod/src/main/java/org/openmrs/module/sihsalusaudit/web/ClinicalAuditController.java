@@ -99,7 +99,7 @@ public class ClinicalAuditController extends BaseRestController {
                 result.add("occurredAt", Instant.ofEpochMilli(event.getClientOccurredAt().getTime()).toString())
                         .add("occurredAtAuthoritative", false);
             }
-            JsonNode metadata = payloadParser.parseStoredMetadata(event.getMetadataJson());
+            JsonNode metadata = payloadParser.parseStoredMetadata(event.getMetadataJson(), event.getEventType());
             if (metadata != null) {
                 result.add("metadata", metadata);
             }

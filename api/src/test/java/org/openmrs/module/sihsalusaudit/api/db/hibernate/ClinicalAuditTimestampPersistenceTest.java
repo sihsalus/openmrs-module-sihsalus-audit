@@ -103,7 +103,10 @@ public class ClinicalAuditTimestampPersistenceTest {
         dao.setSessionFactory(new DbSessionFactory(sessionFactory));
         service = new ClinicalAuditServiceImpl();
         service.setDao(dao);
-        service.setSecurityContext(privilege -> actor);
+        service.setSecurityContext(new org.openmrs.module.sihsalusaudit.api.AuditSecurityContext() {
+            public User requireAuthenticatedUser() { return actor; }
+            public User requireAuthenticatedUserWithPrivilege(String privilege) { return actor; }
+        });
         service.setClock(() -> new Date(SERVER_TIME));
     }
 

@@ -114,12 +114,26 @@ public class AuditPayloadParser {
     }
 
     public JsonNode parseStoredMetadata(String metadataJson) {
+        return parseStoredMetadata(metadataJson, null);
+    }
+
+    public JsonNode parseStoredMetadata(String metadataJson, String eventType) {
         if (metadataJson == null
                 || metadataJson.getBytes(StandardCharsets.UTF_8).length > MAX_STORED_METADATA_BYTES) {
             return null;
         }
         try {
             JsonNode metadata = objectMapper.readTree(metadataJson);
+            if (eventType != null && eventType.startsWith("SERVER_") && metadata != null && metadata.isObject()) {
+                ObjectNode safe = objectMapper.createObjectNode();
+                for (String key : Arrays.asList("resourceUuid", "previousResourceUuid")) {
+                    JsonNode value = metadata.get(key);
+                    if (value != null && value.isTextual() && isUuid(value.textValue())) {
+                        safe.set(key, value);
+                    }
+                }
+                return safe.isEmpty() ? null : safe;
+            }
             return canonicalizeMetadata(metadata);
         }
         catch (JsonProcessingException | RuntimeException ex) {

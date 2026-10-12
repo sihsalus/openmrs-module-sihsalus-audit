@@ -15,6 +15,13 @@
   <bean id="sihsalusAuditClock"
     class="org.openmrs.module.sihsalusaudit.api.impl.SystemAuditClock" />
 
+  <bean id="sihsalusClinicalMutationAudit"
+    class="org.openmrs.module.sihsalusaudit.api.ClinicalMutationAudit">
+    <property name="dao" ref="sihsalusClinicalAuditDao" />
+    <property name="securityContext" ref="sihsalusAuditSecurityContext" />
+    <property name="clock" ref="sihsalusAuditClock" />
+  </bean>
+
   <bean id="sihsalusClinicalAuditService"
     class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean">
     <property name="transactionManager" ref="transactionManager" />

@@ -13,5 +13,8 @@ public interface ClinicalAuditDao {
      */
     ClinicalAuditEvent appendIdempotently(ClinicalAuditEvent event);
 
+    /** Internal service hook: participates in the clinical mutation transaction. */
+    void appendServerEvent(ClinicalAuditEvent event);
+
     List<ClinicalAuditEvent> getEvents(int startIndex, int limit);
 }

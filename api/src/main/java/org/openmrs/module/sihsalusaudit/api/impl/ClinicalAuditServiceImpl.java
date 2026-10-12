@@ -92,7 +92,8 @@ public class ClinicalAuditServiceImpl implements ClinicalAuditService {
 
         Set<String> ids = new HashSet<String>();
         for (ClinicalAuditSubmission submission : submissions) {
-            if (submission == null || submission.getClientEventId() == null || !ids.add(submission.getClientEventId())) {
+            if (submission == null || submission.getClientEventId() == null || !ids.add(submission.getClientEventId())
+                    || submission.getEventType() == null || submission.getEventType().startsWith("SERVER_")) {
                 throw new IllegalArgumentException("Invalid audit batch");
             }
         }
